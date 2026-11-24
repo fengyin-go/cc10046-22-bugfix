@@ -111,7 +111,15 @@ const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
-const filterFields = meta.fields.slice(0, 3)
+// 结果存储和采集调度除了业务字段，还要能按配置编号与实际采纳版本核对来源。
+const VERIFY_FILTER_FIELDS: Record<string, string[]> = {
+  result_store: ['配置编号', '采用版本', '来源凭据', '调度任务'],
+  crawl_schedule: ['配置编号', '采用版本', '来源凭据'],
+}
+const filterFields = [
+  ...meta.fields.slice(0, 3),
+  ...(VERIFY_FILTER_FIELDS[meta.key] ?? []),
+]
 const showCreate = ref(false)
 const creating = ref(false)
 const createValues = ref<Record<string, string>>({})

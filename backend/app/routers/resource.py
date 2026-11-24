@@ -21,6 +21,14 @@ def require_service(module: str):
     return service
 
 
+def _filter_fields(service) -> set[str]:
+    """列表可筛选字段：模块字段之外，允许服务声明核对用的附加字段和别名。"""
+    fields = set(service.LIST_FIELDS)
+    fields.update(getattr(service, "EXTRA_FILTER_FIELDS", []) or [])
+    fields.update(getattr(service, "FILTER_ALIASES", {}) or {})
+    return fields
+
+
 @router.get("/{module}", response_model=PageResult[dict])
 def list_entries(
     module: str,
@@ -31,10 +39,11 @@ def list_entries(
     size: int = Query(default=20, ge=1, le=200),
 ) -> PageResult[dict]:
     service = require_service(module)
+    allowed = _filter_fields(service)
     filters = {
         key: value.strip()
         for key, value in request.query_params.items()
-        if key in service.LIST_FIELDS and value.strip()
+        if key in allowed and value.strip()
     }
     items, total = service.list_entries(
         filters=filters, keyword=keyword, status=status, page=page, size=size)
@@ -49,10 +58,11 @@ def export_entries(
     status: str | None = Query(default=None),
 ) -> StreamingResponse:
     service = require_service(module)
+    allowed = _filter_fields(service)
     filters = {
         key: value.strip()
         for key, value in request.query_params.items()
-        if key in service.LIST_FIELDS and value.strip()
+        if key in allowed and value.strip()
     }
     items, _ = service.list_entries(
         filters=filters, keyword=keyword, status=status, page=1, size=1_000_000)
@@ -71,6 +81,33 @@ def export_entries(
         iter([output.getvalue()]), media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{module}.csv"'},
     )
+
+
+@router.get("/{module}/verify-stored", response_model=dict)
+def verify_stored_entries(module: str, request: Request) -> dict[str, Any]:
+    """核对已落库批次：按配置编号、实际采纳版本、批次号或任务号反查。"""
+    service = require_service(module)
+    verify = getattr(service, "domain_verify_stored", None)
+    if verify is None:
+        raise HTTPException(status_code=404, detail=f"{service.ENTITY}不支持落库核对")
+
+    params = request.query_params
+    config_id: int | None = None
+    if params.get("config_id"):
+        try:
+            config_id = int(params["config_id"])
+        except ValueError:
+            raise HTTPException(status_code=422, detail="配置编号必须是整数")
+    try:
+        return verify(
+            config_id=config_id,
+            config_version=params.get("config_version") or params.get("采用版本") or None,
+            batch_id=params.get("batch_id") or params.get("批次标识") or None,
+            task_id=params.get("task_id") or params.get("调度任务") or None,
+            credential_id=params.get("credential_id") or params.get("来源凭据") or None,
+        )
+    except TypeError:
+        raise HTTPException(status_code=404, detail=f"{service.ENTITY}不支持落库核对")
 
 
 @router.get("/{module}/{entry_id}", response_model=dict)

@@ -77,5 +77,30 @@ npm run dev
 - 列表接口统一返回 `{ items, total, page, size }`，动作接口统一返回 `{ ok, message }`。
 - 状态流转只允许在 `app/services` 里改，路由层不做业务判断。
 
+## 采集申请链路
+
+`POST /api/chains/crawl-pipeline`（或 `/api/chains/crawl-request`）按
+「真实校验来源 → 签发采集来源校验凭据 → 凭据登记调度 → 批次追踪 → 结果存储」
+执行：
+
+- 传不存在的配置编号直接 `404`，不会分配任务号，也不会产生批次日落库。
+- 配置存在但已停用、或确认前被值班员停用/改版本，申请返回 `已退回` 回执，
+  同样不生成调度任务与落库批次。
+- 回执 `receipt` 同时给出 `已确认/已退回`、配置编号、校验版本、采用版本和
+  实际落库批次；同名配置靠配置编号与版本区分。
+- 需要显式复现「校验后、确认前配置被停用」时，可用两阶段接口：
+  `POST /api/chains/crawl-request/validate` 取得 `request_id` 与凭据，
+  再 `POST /api/chains/crawl-request/confirm` 复核并回执。
+
+核对入口：
+
+- `GET /api/chains/source-credential/{credential_id}`：按凭据反查采用的配置编号与版本。
+- `GET /api/chains/crawl-schedule/{task_id}`：按任务号反查来源配置、版本与凭据。
+- `GET /api/chains/stored-batch`、`GET /api/result_store/verify-stored`：按
+  `config_id`、`config_version`、`batch_id`、`task_id` 核对已落库批次；
+  同名批次若归属不符会标记 `fake_batch`。
+- 结果存储与采集调度列表也支持 `config_id` / `config_version`（或中文
+  `配置编号` / `采用版本`）筛选。
+
 领域：数据工程
 子方向：数据采集、爬虫与RPA

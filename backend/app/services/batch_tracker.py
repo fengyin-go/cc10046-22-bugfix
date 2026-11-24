@@ -1,6 +1,8 @@
 """__NAME__领域服务：字段、状态和动作来自业务配置，数据处理骨架由基类复用。"""
 from __future__ import annotations
 
+from typing import Any
+
 from app.services.base import BaseModuleService
 
 
@@ -14,10 +16,20 @@ class BatchTrackerService(BaseModuleService):
     ACTION_RULES = {"重采失败行": "部分成功", "标记完成": "全部成功"}
     NEGATIVE_ACTIONS = []
 
-    def domain_track_batch(self, batch_id: str, schedule_id: str) -> dict:
-        """追踪采集批次执行状态。"""
+    def domain_track_batch(
+        self,
+        batch_id: str,
+        schedule_id: str,
+        *,
+        config_id: int | None = None,
+        config_version: str | None = None,
+        credential_id: str | None = None,
+    ) -> dict[str, Any]:
+        """追踪采集批次执行状态，并把任务号与来源凭据绑在一起。"""
         from app.store import store
+
         import time
+
         rows = store.rows(self.MODULE)
         now = time.strftime("%Y-%m-%d %H:%M:%S")
         entry = {
@@ -33,6 +45,16 @@ class BatchTrackerService(BaseModuleService):
             "status": "执行中",
             "pending": True,
             "abnormal": False,
+            # 任务号必须能反查回真实来源，避免任务号与来源对不上。
+            "来源配置编号": config_id,
+            "配置编号": config_id,
+            "config_id": config_id,
+            "采用版本": config_version,
+            "配置版本": config_version,
+            "config_version": config_version,
+            "来源凭据": credential_id,
+            "凭证标识": credential_id,
+            "credential_id": credential_id,
         }
         rows.append(entry)
         return entry
